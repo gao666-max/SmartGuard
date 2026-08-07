@@ -1,0 +1,16 @@
+# 敏感文件
+config.py
+
+# Python
+__pycache__/
+*.pyc
+
+# 模型（太大不适合 Git，HuggingFace 可重新下载）
+*.pt
+
+# 录音/输出
+*.wav
+
+# 临时文件
+_dashboard_ready.txt
+_cache/

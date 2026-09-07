@@ -14,3 +14,18 @@ __pycache__/
 # 临时文件
 _dashboard_ready.txt
 _cache/
+
+# 竞赛资料（不提交）
+*.pdf
+.obsidian/
+[[.md
+
+# 过程文档（方案书、计划书）
+*方案设计书*.md
+*开发计划书*.md
+竞赛执行计划.md
+AI导师提示词.md
+
+# 旧版代码（已被主程序取代）
+app.py
+test_audio.py

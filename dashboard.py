@@ -343,7 +343,7 @@ async def qwen_main_loop():
         try:
             async with ws_lib.connect(
                 WS_URL,
-                extra_headers={"Authorization": f"Bearer {API_KEY}"},
+                additional_headers={"Authorization": f"Bearer {API_KEY}"},
                 ping_interval=20
             ) as ws:
                 print("[Qwen] WebSocket 已连接")

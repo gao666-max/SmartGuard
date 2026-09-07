@@ -482,7 +482,7 @@ async def main():
 
     async with websockets.connect(
         WS_URL,
-        extra_headers={"Authorization": f"Bearer {API_KEY}"}
+        additional_headers={"Authorization": f"Bearer {API_KEY}"}
     ) as ws:
         # 一次连接，只发一次 session.update
         await ws.send(json.dumps({

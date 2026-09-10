@@ -1,122 +1,99 @@
 # 智巡哨兵 · SmartGuard
 
-面向工地安全的语音交互式具身智能巡检系统。
+> 面向工地安全的语音交互式具身智能巡检系统 —— 说一句话，它听懂、转过去、看、再告诉你结果
 
-**2026 年天津市第九届大学生信息技术"新工科"工程实践创新技术竞赛** — 自主命题 A 类
+[![Qwen](https://img.shields.io/badge/Audio-Qwen--Audio-6A5ACD.svg)](https://github.com/QwenLM)
+[![YOLOv8](https://img.shields.io/badge/Vision-YOLOv8-00B140.svg)](https://github.com/ultralytics/ultralytics)
+[![STM32](https://img.shields.io/badge/Hardware-STM32F103-03234B.svg)](https://www.st.com)
 
-> 工人对着系统说一句"去脚手架区域看看有没有人没戴安全帽"，系统就能理解意图、控制摄像头云台转向目标区域、用 YOLO 检测安全帽佩戴情况，再用语音把结果播报出来。
-
----
-
-## ✨ 功能特性
-
-- 🎙️ **语音交互** — 基于 Qwen-Audio-3.0-Realtime，支持 Function Call，一个模型完成语音识别 + 意图理解 + 语音合成
-- 🦺 **安全帽检测** — YOLOv8（SafetyVision 13 类模型），CUDA 加速，区分"已佩戴 / 未佩戴 / 人员"
-- 🤖 **具身控制** — 语音指令解析出空间方位词，通过串口控制 STM32 舵机云台转向目标区域
-- 🚨 **主动报警** — 后台线程持续检测，连续 3 帧违规自动告警
-- 📊 **实时面板** — Flask + SocketIO 监控面板，实时视频流、区域地图、统计数字、事件日志
-- 🔌 **硬件可选** — STM32 不在线时自动降级为模拟模式，软件链路完整可跑
+**2026 年天津市第九届大学生信息技术「新工科」工程实践创新技术竞赛** — 自主命题 A 类
 
 ---
 
-## 🏗️ 系统架构
+## 📌 Problem（背景与问题）
+
+工地安全事故里，**安全帽没戴**是高频风险。传统做法是人工巡检或固定摄像头回看，但：
+
+- 人工巡检覆盖不全、人力成本高
+- 固定摄像头只能盯一个方向，且「拍到」≠「当场制止」
+- 工人戴不戴帽、哪里没戴，需要**当场、实时**发现并提醒
+
+**目标**：做一个工人能**用嘴指挥**、系统能**用眼看 + 用嘴回**的巡检哨兵。
+
+## 🤖 Why Agent（为什么是 Agent，而不是单一模型）
+
+这个系统本质上是一个**多模态具身 Agent**，一个闭环里有四种完全不同的能力：
 
 ```
-┌─────────────┐     语音指令      ┌──────────────────────┐
-│   用户(工人)  │ ───────────────▶ │  Qwen-Audio-3.0      │
-│             │                   │  (语音识别+意图理解)   │
-└─────────────┘                   └──────────┬───────────┘
-                                             │ Function Call
-                              ┌──────────────┼──────────────┐
-                              ▼                             ▼
-                    ┌──────────────────┐        ┌──────────────────┐
-                    │  move_pan_tilt   │        │  detect_helmet   │
-                    │  串口→STM32舵机   │        │  YOLOv8 安全帽    │
-                    └──────────────────┘        └──────────────────┘
-                              │                             │
-                              └──────────────┬──────────────┘
-                                             ▼
-                              ┌──────────────────────────┐
-                              │  Qwen-Audio 生成语音回复  │
-                              │  播报检测结果             │
-                              └──────────────────────────┘
-                                             │
-                                             ▼
-                              ┌──────────────────────────┐
-                              │  Flask + SocketIO 面板    │
-                              │  视频流·区域地图·统计·日志 │
-                              └──────────────────────────┘
+听（语音）→ 想（意图）→ 动（云台）→ 看（检测）→ 说（播报）
 ```
 
-感知 → 决策 → 执行 → 反馈，完整闭环。
+单一模型做不到「听懂指令 + 控制硬件 + 视觉检测 + 语音合成」。只有 Agent 范式——**LLM 理解意图 → Function Call 触发工具 → 工具执行物理动作 → 结果回传再生成语音**——才能串起这个闭环。
 
----
+## 🏗️ Architecture（架构）
 
-## 🧰 技术栈
+```mermaid
+flowchart TB
+    USER["工人：『去脚手架区看看<br/>有没有人没戴安全帽』"] --> QWEN["Qwen-Audio-3.0-Realtime<br/>（语音识别 + 意图理解）"]
+    QWEN -->|Function Call| MOVE["move_pan_tilt<br/>串口 → STM32 舵机云台"]
+    QWEN -->|Function Call| DETECT["detect_helmet<br/>YOLOv8 安全帽检测"]
+    MOVE --> CAM["摄像头转向目标区域"]
+    CAM --> DETECT
+    DETECT --> QWEN
+    QWEN --> SPEAK["语音播报检测结果"]
+    DETECT -->|"连续3帧违规"| ALARM["主动报警"]
+    DETECT --> DASH["Flask + SocketIO<br/>实时监控面板"]
+```
 
-| 模块 | 技术 | 说明 |
+## 🛠️ Skills（核心能力）
+
+| 能力 | 实现 | 说明 |
 |------|------|------|
-| 语音交互 | Qwen-Audio-3.0-Realtime | WebSocket + Function Call |
-| 视觉检测 | YOLOv8 + PyTorch | CUDA 加速 |
-| 硬件控制 | STM32F103 + SG90 舵机 | 串口 115200 |
-| Web 面板 | Flask + Flask-SocketIO | 实时推送 |
+| 🎙️ 语音交互 | Qwen-Audio-3.0-Realtime | 一个模型完成识别 + 意图理解 + 合成，支持 Function Call |
+| 🦺 安全帽检测 | YOLOv8（SafetyVision 13 类） | CUDA 加速，区分「已佩戴 / 未佩戴 / 人员」 |
+| 🤖 具身控制 | 串口 → STM32 舵机云台 | 语音指令解析空间方位词，控制云台转向 |
+| 🚨 主动报警 | 后台线程 | 连续 3 帧违规自动告警 |
+| 📊 实时面板 | Flask + SocketIO | 视频流 / 区域地图 / 统计 / 事件日志 |
+| 🔌 硬件可选 | 降级模拟模式 | STM32 不在线时软件链路仍完整可跑 |
+
+## 🧰 Tools（技术栈）
+
+- **语音**：Qwen-Audio-3.0-Realtime（WebSocket + Function Call）
+- **视觉**：YOLOv8（SafetyVision），CUDA 加速
+- **硬件**：STM32F103 + SG90 舵机云台，串口通信
+- **可视化**：Flask + SocketIO Dashboard
+
+## 🧠 Memory（记忆 / 状态）
+
+Agent 需要记住「短期状态」才能做对判断：
+
+- **连续帧计数**：单帧误检会误报，所以后台线程维护「连续 3 帧违规」的短期记忆，去抖动后才报警
+- **事件日志**：每次检测/报警/云台动作都记入日志，面板可回溯
+
+## 📊 Eval（评估 / 验证）
+
+- **去抖动验证**：3 帧连续判定，避免单帧误检导致的假报警
+- **降级测试**：断开 STM32 → 系统自动进模拟模式，语音/检测/面板链路仍完整
+- **分类精度**：YOLOv8 SafetyVision 13 类模型，区分已佩戴 / 未佩戴 / 人员三类
+
+## 💥 Failure Cases（失败案例 / 边界）
+
+| 失败场景 | 表现 | 解法 |
+|---------|------|------|
+| 单帧误检安全帽 | 一闪而过的物体触发报警 | 连续 3 帧去抖 |
+| STM32 未连接 | 云台不响应，链路中断 | 自动降级模拟模式 |
+| 语音指令含模糊方位词 | 云台转向不准 | 方位词 → 角度映射规则 |
+| 串口通信不稳定 | 舵机偶发丢步 | 串口重连 + 状态校验 |
+
+## 🎨 Design Decisions（设计决策）
+
+| 决策 | 理由 | 代价 |
+|------|------|------|
+| 一个模型做语音全链路（Qwen-Audio） | 省掉 ASR+TTS 两个模块，简化架构 | 依赖单模型能力 |
+| Function Call 驱动硬件 | LLM 直接产出结构化动作，天然适配 | 需校验动作合法性 |
+| 硬件可选 + 降级 | 演示/开发不受硬件拖累 | 需维护模拟路径 |
+| 连续帧去抖 | 工地环境误检多，必须压假报警 | 延迟 +3 帧 |
 
 ---
 
-## 🚀 快速开始
-
-### 1. 安装依赖
-
-```bash
-pip install flask flask-socketio pyserial pyaudio websockets ultralytics opencv-python numpy
-```
-
-### 2. 配置 API Key
-
-```bash
-cp config.example.py config.py
-```
-
-编辑 `config.py`，填入你的阿里云百炼 API Key（模型：`qwen-audio-3.0-realtime-plus`）。
-
-### 3. 启动
-
-```bash
-python dashboard.py
-```
-
-浏览器打开 `http://localhost:5000`，按住底部按钮说话即可。
-
-> **模型说明**：默认加载 `safetyvision_model.pt`（安全帽检测专用），缺失时自动回退到 `yolov8n.pt`（通用检测，`ultralytics` 会自动下载）。安全帽模型可从 HuggingFace 获取 `ayushgupta7777/safetyvision-yolov8`。
-
----
-
-## 📁 项目结构
-
-```
-├── dashboard.py            # 集成指挥中心（Flask + 语音 + 检测 + 面板）
-├── helmet_detector.py      # YOLO 安全帽检测模块
-├── pan_tilt_controller.py  # STM32 云台串口控制（含模拟模式）
-├── voice_chat.py           # 独立语音助手（终端版）
-├── test_servo.py           # 串口 + 舵机快速测试
-├── stm32_firmware/         # STM32 固件（Arduino）
-└── config.example.py       # 配置模板
-```
-
----
-
-## 🔌 硬件说明（可选）
-
-软件链路不依赖硬件即可完整运行。STM32 云台是"具身"能力的载体，缺失时 `pan_tilt_controller.py` 会自动进入模拟模式（终端打印舵机角度）。
-
-如需接入真实舵机：
-
-- 舵机信号线 → STM32 `PA0`（水平）
-- USB-TTL `RXD` → `A9`、`TXD` → `A10`（交叉）
-- 固件烧录：`stm32_firmware/stm32_firmware.ino`
-
----
-
-## 📄 License
-
-MIT
+*这是一个「软件 Agent + 物理硬件」的交叉项目——它证明了我能跨语音、视觉、嵌入式三层，把 Agent 落到真实物理世界。*
